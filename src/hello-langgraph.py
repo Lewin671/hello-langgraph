@@ -15,16 +15,19 @@ agent = create_react_agent(
 # 初始化输入消息
 input_messages = [{"role": "user", "content": "What's the weather in sf today?"}]
 
-# 记录已输出的消息数量
+# 记录已输出的消息数量, 用于避免重复打印
 seen = 0
 
 # 流式运行 agent
 for chunk in agent.stream({"messages": input_messages}, stream_mode="updates"):
     for node_name, node_data in chunk.items():
         if 'messages' in node_data:
-            for message in node_data['messages']:
+            # 仅处理新的消息，避免重复输出
+            new_messages = node_data['messages'][seen:]
+            seen += len(new_messages)
+            for message in new_messages:
                 # 处理对话内容
-                isToolMessage = hasattr(message, 'name') and message.name
+                is_tool_message = bool(getattr(message, 'name', None))
                 if hasattr(message, 'content') and message.content:
                     # 过滤掉<think>标签内容
                     content = message.content
@@ -35,7 +38,7 @@ for chunk in agent.stream({"messages": input_messages}, stream_mode="updates"):
                             print(f"🤔 思考中: {thinking}")
                         # 提取</think>之后的内容
                         content = content.split('</think>')[-1].strip()
-                    if content and not isToolMessage:
+                    if content and not is_tool_message:
                         print(f"💬 [{node_name}]: {content}")
                 
                 # 处理工具调用
@@ -44,5 +47,5 @@ for chunk in agent.stream({"messages": input_messages}, stream_mode="updates"):
                         print(f"🔧 工具调用: {tool_call['name']}({tool_call['args']})")
                 
                 # 处理工具结果
-                if isToolMessage:
+                if is_tool_message:
                     print(f"✅ 工具结果 [{message.name}]: {message.content}")
