@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 from langchain_ollama.chat_models import ChatOllama
 from langgraph.prebuilt import create_react_agent
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_core.tools import tool
 from langchain_ollama import OllamaLLM
 import sys
@@ -217,8 +217,8 @@ def loadMCPConfig():
 
 
 async def process_stream_response(agent, messages):
-    """处理流式响应并返回AI的回复"""
-    ai_response = ""
+    """处理流式响应并返回所有新消息"""
+    new_messages = []
     tool_display = ToolDisplay()
     start_time = time.time()
 
@@ -226,6 +226,9 @@ async def process_stream_response(agent, messages):
         for node_name, node_data in chunk.items():
             if "messages" in node_data:
                 for message in node_data["messages"]:
+                    # 添加消息到新消息列表
+                    new_messages.append(message)
+
                     # 处理对话内容
                     isToolMessage = hasattr(message, "name") and message.name
                     if hasattr(message, "content") and message.content:
@@ -244,7 +247,6 @@ async def process_stream_response(agent, messages):
                             content = content.split("</think>")[-1].strip()
                         if content and not isToolMessage:
                             UI.print_content(content, node_name)
-                            ai_response += content
 
                     # 处理工具调用
                     if hasattr(message, "tool_calls") and message.tool_calls:
@@ -264,7 +266,7 @@ async def process_stream_response(agent, messages):
     total_time = time.time() - start_time
     tool_display.print_summary()
 
-    return ai_response
+    return new_messages
 
 
 async def main():
@@ -323,6 +325,23 @@ async def main():
                             print(
                                 f"{Colors.GRAY}  {i}. 👤 你: {msg.content[:50]}...{Colors.RESET}"
                             )
+                        elif isinstance(msg, ToolMessage):
+                            print(
+                                f"{Colors.GRAY}  {i}. 🔧 工具 [{msg.name}]: {msg.content[:50]}...{Colors.RESET}"
+                            )
+                        elif isinstance(msg, AIMessage):
+                            content = msg.content or ""
+                            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                                tool_names = [
+                                    tc.get("name", "unknown") for tc in msg.tool_calls
+                                ]
+                                print(
+                                    f"{Colors.GRAY}  {i}. 🤖 助手: {content[:30]}... [调用工具: {', '.join(tool_names)}]{Colors.RESET}"
+                                )
+                            else:
+                                print(
+                                    f"{Colors.GRAY}  {i}. 🤖 助手: {content[:50]}...{Colors.RESET}"
+                                )
                         else:
                             print(
                                 f"{Colors.GRAY}  {i}. 🤖 助手: {msg.content[:50]}...{Colors.RESET}"
@@ -340,6 +359,32 @@ async def main():
                                 for msg in messages:
                                     if isinstance(msg, HumanMessage):
                                         f.write(f"👤 你: {msg.content}\n\n")
+                                    elif isinstance(msg, ToolMessage):
+                                        f.write(
+                                            f"🔧 工具 [{msg.name}]: {msg.content}\n\n"
+                                        )
+                                    elif isinstance(msg, AIMessage):
+                                        # 处理AI消息，包括工具调用
+                                        content = msg.content or ""
+                                        if (
+                                            hasattr(msg, "tool_calls")
+                                            and msg.tool_calls
+                                        ):
+                                            f.write(f"🤖 助手: {content}\n")
+                                            for tool_call in msg.tool_calls:
+                                                tool_name = tool_call.get(
+                                                    "name", "unknown"
+                                                )
+                                                tool_args = tool_call.get("args", {})
+                                                args_str = json.dumps(
+                                                    tool_args,
+                                                    ensure_ascii=False,
+                                                    indent=2,
+                                                )
+                                                f.write(f"🔧 调用工具 [{tool_name}]:\n")
+                                                f.write(f"   参数: {args_str}\n\n")
+                                        else:
+                                            f.write(f"🤖 助手: {content}\n\n")
                                     else:
                                         f.write(f"🤖 助手: {msg.content}\n\n")
                             UI.print_success(f"对话已保存到 {filename}")
@@ -358,11 +403,10 @@ async def main():
                 UI.print_assistant_start()
 
                 # 处理AI响应
-                ai_response = await process_stream_response(agent, messages)
+                new_messages = await process_stream_response(agent, messages)
 
-                # 添加AI消息到历史
-                if ai_response:
-                    messages.append(AIMessage(content=ai_response))
+                # 添加所有新消息到历史
+                messages.extend(new_messages)
 
                 print()  # 换行
 
