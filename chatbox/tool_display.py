@@ -19,9 +19,8 @@ class ToolDisplay:
         self.active_tools = {}  # 正在执行的工具
         self.completed_tools = []  # 已完成的工具
 
-    def start_tool(self, tool_name: str, args: Dict[str, Any]):
+    def start_tool(self, tool_name: str, tool_id: str, args: Dict[str, Any]):
         """开始工具调用"""
-        tool_id = f"{tool_name}_{int(time.time() * 1000)}"
         self.active_tools[tool_id] = {
             "name": tool_name,
             "args": args,
@@ -29,7 +28,6 @@ class ToolDisplay:
             "status": "running",
         }
         self._print_tool_start(tool_id)
-        return tool_id
 
     def complete_tool(self, tool_id: str, result: Any):
         """完成工具调用"""

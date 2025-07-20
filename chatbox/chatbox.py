@@ -3,6 +3,7 @@ import asyncio
 import json
 import time
 from datetime import datetime
+import traceback
 from langchain_ollama.chat_models import ChatOllama
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
@@ -221,51 +222,40 @@ async def process_stream_response(agent, messages):
     new_messages = []
     tool_display = ToolDisplay()
     start_time = time.time()
+    current_content = ""
 
-    async for chunk in agent.astream({"messages": messages}, stream_mode="updates"):
-        for node_name, node_data in chunk.items():
-            if "messages" in node_data:
-                for message in node_data["messages"]:
-                    # 添加消息到新消息列表
-                    new_messages.append(message)
+    async for event in agent.astream_events({"messages": messages}, version="v2"):
+        # print("process_stream_response: ", event["event"])
+        # 处理 token 级别的流式事件
+        if event["event"] == "on_chat_model_stream":
+            chunk = event["data"]["chunk"]
+            if hasattr(chunk, "content") and chunk.content:
+                # 逐个 token 输出
+                print(chunk.content, end="", flush=True)
+                current_content += chunk.content
 
-                    # 处理对话内容
-                    isToolMessage = hasattr(message, "name") and message.name
-                    if hasattr(message, "content") and message.content:
-                        # 过滤掉<think>标签内容
-                        content = message.content
-                        if "<think>" in content:
-                            # 提取 <think> 和 </think> 之间的内容
-                            thinking = (
-                                content.split("<think>")[-1]
-                                .split("</think>")[0]
-                                .strip()
-                            )
-                            if thinking:
-                                UI.print_thinking(thinking)
-                            # 提取</think>之后的内容
-                            content = content.split("</think>")[-1].strip()
-                        if content and not isToolMessage:
-                            UI.print_content(content, node_name)
+        # 处理工具调用
+        elif event["event"] == "on_tool_start":
+            input = event["data"]["input"]
+            tool_name = event["name"]
+            tool_id = event["run_id"]
+            tool_display.start_tool(tool_name, tool_id, input)
 
-                    # 处理工具调用
-                    if hasattr(message, "tool_calls") and message.tool_calls:
-                        for tool_call in message.tool_calls:
-                            tool_id = tool_display.start_tool(
-                                tool_call["name"], tool_call["args"]
-                            )
+        elif event["event"] == "on_tool_end":
+            output = event["data"]["output"].content
+            tool_name = event["name"]
+            tool_id = event["run_id"]
+            tool_display.complete_tool(tool_id, output)
 
-                    # 处理工具结果
-                    if isToolMessage:
-                        # 找到对应的工具调用并完成
-                        for tool_id, tool_info in tool_display.active_tools.items():
-                            if tool_info["name"] == message.name:
-                                tool_display.complete_tool(tool_id, message.content)
-                                break
+        # 处理完整消息（用于历史记录）
+        elif event["event"] == "on_chain_end":
+            # 判断是否可以获取 event["data"]["output"]["messages"]
+            if "output" in event["data"] and "messages" in event["data"]["output"]:
+                new_messages = event["data"]["output"]["messages"]
 
-    total_time = time.time() - start_time
+    # print("new_messages: ", new_messages)
+
     tool_display.print_summary()
-
     return new_messages
 
 
@@ -406,7 +396,9 @@ async def main():
                 new_messages = await process_stream_response(agent, messages)
 
                 # 添加所有新消息到历史
-                messages.extend(new_messages)
+                messages = new_messages
+
+                # print("messages: ", messages)
 
                 print()  # 换行
 
@@ -416,6 +408,8 @@ async def main():
                 break
             except Exception as e:
                 UI.print_error(f"发生错误: {e}")
+                # 打印堆栈信息
+                print(traceback.format_exc())
                 continue
 
         await cleanup()
