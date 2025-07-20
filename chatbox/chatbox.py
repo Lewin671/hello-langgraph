@@ -25,6 +25,10 @@ from tool_display import ToolDisplay, ProgressBar, StatusIndicator
 # 加载配置和主题
 config = load_config()
 theme = load_theme()
+import logging
+
+# 控制 MCP 相关的日志记录器
+logging.basicConfig(level=logging.WARNING)
 
 
 # 颜色代码
