@@ -5,6 +5,14 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_core.tools import tool
 from langchain_ollama import OllamaLLM
 import sys
+import os
+from pathlib import Path
+
+# Add project root to Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+from common.llm_factory import create_llm
 
 
 @tool
@@ -84,7 +92,7 @@ def main():
     print("=" * 50)
 
     # 创建 agent
-    llm = ChatOllama(model="qwen2.5:7b")
+    llm = create_llm()
     agent = create_react_agent(
         model=llm,
         tools=[get_weather],
