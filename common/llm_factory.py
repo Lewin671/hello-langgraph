@@ -134,7 +134,7 @@ def create_llm(**kwargs) -> LLM:
         LLM instance
     """
     factory = LLMFactory()
-    return factory.create_llm(**kwargs)
+    return factory.create_llm(streaming=True, **kwargs)
 
 
 # Example usage

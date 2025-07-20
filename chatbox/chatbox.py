@@ -40,12 +40,12 @@ def loadMCPConfig():
         return json.load(f)
 
 
-def process_stream_response(agent, messages):
+async def process_stream_response(agent, messages):
     """处理流式响应并返回AI的回复"""
     ai_response = ""
     tool_was_called = False
 
-    for chunk in agent.stream({"messages": messages}, stream_mode="updates"):
+    async for chunk in agent.astream({"messages": messages}, stream_mode="updates"):
         for node_name, node_data in chunk.items():
             if "messages" in node_data:
                 for message in node_data["messages"]:
@@ -126,7 +126,7 @@ async def main():
             print("\n🤖 助手: ", end="", flush=True)
 
             # 处理AI响应
-            ai_response = process_stream_response(agent, messages)
+            ai_response = await process_stream_response(agent, messages)
 
             # 添加AI消息到历史
             if ai_response:
