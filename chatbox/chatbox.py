@@ -1,4 +1,6 @@
 from ast import mod
+import asyncio
+import json
 from langchain_ollama.chat_models import ChatOllama
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
@@ -7,6 +9,7 @@ from langchain_ollama import OllamaLLM
 import sys
 import os
 from pathlib import Path
+from langchain_mcp_tools import convert_mcp_to_langchain_tools
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent
@@ -29,6 +32,12 @@ def get_weather(city: str) -> str:
     """
     print(f"[tool-call]get_weather: {city}")
     return f"It's always sunny in {city}!"
+
+
+def loadMCPConfig():
+    # 从项目根目录下加载 mcp.json
+    with open(Path(__file__).parent.parent / "mcp.json", "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def process_stream_response(agent, messages):
@@ -73,19 +82,10 @@ def process_stream_response(agent, messages):
                         tool_was_called = True
                         print(f"✅ 工具结果 [{message.name}]: {message.content}")
 
-    # 如果没有调用工具但用户询问了相关话题，给出提示
-    if not tool_was_called and ai_response:
-        last_user_message = messages[-1].content if messages else ""
-        if any(
-            word in last_user_message.lower()
-            for word in ["天气", "weather", "计算", "calculate", "math"]
-        ):
-            print("⚠️  提示: AI没有调用工具，可能需要检查工具配置")
-
     return ai_response
 
 
-def main():
+async def main():
     """主对话循环"""
     print("🤖 欢迎使用 LangGraph CLI 对话系统!")
     print("💡 输入 'quit' 或 'exit' 退出对话")
@@ -93,9 +93,13 @@ def main():
 
     # 创建 agent
     llm = create_llm()
+    tools, cleanup = await convert_mcp_to_langchain_tools(loadMCPConfig()["mcpServers"])
+
+    print("mcp tools: ", tools)
+
     agent = create_react_agent(
         model=llm,
-        tools=[get_weather],
+        tools=[get_weather, *tools],
         prompt="""You are a helpful assistant with access to tools. """,
     )
 
@@ -136,7 +140,8 @@ def main():
         except Exception as e:
             print(f"\n❌ 发生错误: {e}")
             continue
+    await cleanup()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
